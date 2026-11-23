@@ -1,0 +1,36 @@
+Generate a minimalistic white/black PDF project report.
+
+TITLE
+TinyPharmaGen — ML-Based Drug–Target Binding Affinity Prediction (Kinase Inhibitors)
+
+AUTHORS
+Vinod Kumar (24P3012) · Pir Ahmed Shah (24P3000) · Muhammad Maaz (24P3032)
+BSE-5A · Artificial Intelligence course project
+
+DESIGN (strict)
+- Pure monochrome: black text (#0a0a0a) on white (#ffffff), grayscale only, no color.
+- Hairline rules (#e5e5e5), generous whitespace, one clean sans + one mono font.
+- All figures converted to grayscale, captioned and numbered.
+
+STRUCTURE (maps to the 8 project requirements)
+1. Problem statement — supervised regression: predict drug–kinase binding affinity f(drug, protein).
+2. Dataset — KIBA benchmark (2,111 drugs × 229 kinases, 118,254 measured pairs; source: github.com/hkmztrk/DeepDTA). Inputs: drug SMILES → 1024-bit Morgan fingerprint + 7 descriptors (1031); protein sequence → amino-acid composition (20) + dipeptide composition (400) = 420. Output: KIBA score.
+3. Data preprocessing — missing (NaN) cells are unmeasured pairs, kept only measured; canonical SMILES deduplication; invalid-SMILES check; target conversion (DAVIS pKd only); scaling not required for tree models (explain); 80/20 random split + cold-drug GroupShuffleSplit.
+4. EDA — target distribution, protein/SMILES length, MW-vs-target, heatmap (figures/eda.png). Note: drug identity alone explains 42.0% of target variance.
+5. Models — Random Forest, XGBoost, DeepDTA-lite 1-D CNN. Metrics: MSE, RMSE, R², Pearson, Spearman, Concordance Index (primary).
+6. Comparison & best model — full results table; XGBoost selected: cold-drug CI 0.783 (RF 0.787, CNN 0.760); within 0.01 → tied on ranking, chosen for best cold-drug error metrics (MSE 0.360, R² 0.502), speed (28 s) and deployability. Explain XGBoost (gradient boosting, residual trees, regularization).
+7. Web app — white/black Three.js 3D frontend; user enters SMILES + kinase → predicted KIBA score + binder class + 3D conformer. Include app screenshot.
+8. References + submission links (GitHub, live app, demo, dataset).
+
+FIGURES (grayscale)
+figures/eda.png · figures/ci_comparison.png · figures/pred_vs_actual.png · figures/learning_curve.png · figures/feature_importance.png
+
+KEY NUMBERS (include verbatim)
+- Results: cold-drug CI 0.783 (XGB) / 0.787 (RF) / 0.760 (CNN); random CI 0.840 / 0.805 / 0.854.
+- Learning curve: CI 0.662 (50 drugs) → 0.775 (1600 drugs).
+- Feature importance: ~75% drug fingerprint, ~24% protein dipeptide, ~1% descriptors+AAC.
+
+CONCISENESS
+8–12 pages. One idea per section, tables over prose where possible. No filler.
+
+Render to PDF (e.g., LaTeX or HTML→PDF), embed the grayscale figures, output as report/project_report.pdf.

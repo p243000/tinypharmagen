@@ -1,0 +1,11 @@
+{
+  "dataset": "KIBA",
+  "target_name": "KIBA score",
+  "is_pkd": false,
+  "strong": 12.1,
+  "moderate": 11.5,
+  "n_drugs": 2068,
+  "n_kinases": 229,
+  "cold_ci": 0.783,
+  "random_ci": 0.84
+}

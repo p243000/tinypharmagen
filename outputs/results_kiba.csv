@@ -1,0 +1,7 @@
+split,model,MSE,RMSE,R2,Pearson,Spearman,CI,secs
+random,Random Forest,0.322,0.568,0.54,0.751,0.756,0.805,167.67
+random,XGBoost,0.216,0.465,0.691,0.836,0.822,0.84,29.257
+cold_drug,Random Forest,0.382,0.618,0.473,0.699,0.716,0.787,168.541
+cold_drug,XGBoost,0.36,0.6,0.502,0.71,0.708,0.783,28.176
+random,DeepDTA-lite CNN,0.199,0.446,0.716,0.849,0.839,0.854,483.056
+cold_drug,DeepDTA-lite CNN,0.421,0.649,0.419,0.657,0.656,0.76,475.744

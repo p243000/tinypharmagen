@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Data downloaded by the notebook
+data/
+*.zip
+
+# Notebook artefacts
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Local screenshots / scratch
+temp/
+*.log

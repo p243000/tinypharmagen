@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TinyPharmaGen — Project Report</title>
+<style>
+@page{size:A4;margin:17mm 16mm 18mm}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#fff;color:#0a0a0a}
+body{font:9.7pt/1.55 "Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:"Courier New",monospace}
+h1{font-size:26pt;line-height:1.1;letter-spacing:-.03em;margin:0 0 10px;font-weight:700}
+h2{font-size:13pt;margin:20px 0 8px;letter-spacing:-.01em;border-bottom:1px solid #d8d8d8;padding-bottom:5px;font-weight:700;page-break-after:avoid}
+h3{font-size:10.5pt;margin:14px 0 5px;font-weight:700}
+p{margin:0 0 8px;text-align:justify}
+small,.small{font-size:8pt;color:#555}
+.mut{color:#666}
+.kicker{font:8pt "Courier New",monospace;letter-spacing:.16em;text-transform:uppercase;color:#666}
+.rule{border-top:2px solid #0a0a0a;margin:12px 0 18px}
+.cover{padding-top:26mm}
+.cover h1{font-size:34pt;max-width:150mm}
+.cover .sub{font-size:12pt;color:#333;margin:6px 0 26px}
+.authors{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:22px 0;border-top:1px solid #ddd;border-bottom:1px solid #ddd;padding:14px 0}
+.authors b{display:block;font-size:10pt}
+.authors span{font:8pt "Courier New",monospace;color:#666}
+.cover-meta{margin-top:26mm;font:8.5pt "Courier New",monospace;color:#444}
+.cover-meta td{padding:3px 18px 3px 0}
+table{width:100%;border-collapse:collapse;margin:8px 0 12px;font-size:8.6pt}
+th,td{text-align:left;padding:5px 7px;border-bottom:1px solid #e0e0e0;vertical-align:top}
+th{font-weight:700;border-bottom:1.5px solid #0a0a0a;font-size:8.2pt;letter-spacing:.02em}
+td.num,th.num{text-align:right;font-family:"Courier New",monospace}
+tbody tr:last-child td{border-bottom:1px solid #0a0a0a}
+b.hl{background:#0a0a0a;color:#fff;padding:1px 4px}
+figure{margin:10px 0 14px;page-break-inside:avoid}
+figure img{width:100%;max-height:84mm;object-fit:contain;display:block;border:1px solid #ddd;filter:grayscale(1) contrast(1.03)}
+figcaption{font:7.8pt "Courier New",monospace;color:#666;margin-top:5px;display:flex;justify-content:space-between}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.note{border-left:2px solid #0a0a0a;padding:7px 11px;background:#f7f7f7;font-size:8.8pt;margin:10px 0}
+ul{margin:4px 0 10px;padding-left:16px}
+li{margin-bottom:3px}
+.pb{page-break-before:always}
+.nobreak{page-break-inside:avoid}
+a{color:#0a0a0a}
+code{font:8.8pt "Courier New",monospace;background:#f2f2f2;padding:1px 4px}
+.ref{font-size:8.4pt;color:#333;margin-bottom:3px}
+</style>
+</head>
+<body>
+
+<!-- ============================ COVER ============================ -->
+<section class="cover">
+  <div class="kicker">Artificial Intelligence · Course Project · BSE-5A</div>
+  <h1>TinyPharmaGen</h1>
+  <div class="sub">Machine-learning prediction of drug–kinase binding affinity,<br>with an interactive monochrome 3D workbench.</div>
+
+  <div class="authors">
+    <div><b>Vinod Kumar</b><span>24P3012</span></div>
+    <div><b>Pir Ahmed Shah</b><span>24P3000</span></div>
+    <div><b>Muhammad Maaz</b><span>24P3032</span></div>
+  </div>
+
+  <p class="mut" style="max-width:150mm;font-size:9.4pt">
+    We train and compare three models — Random Forest, XGBoost, and a DeepDTA-style
+    1-D CNN — on the public KIBA benchmark, evaluate them on a strict cold-drug split,
+    and deploy the selected model behind a Three.js web interface that renders the
+    predicted molecular conformer in 3D.
+  </p>
+
+  <table class="cover-meta">
+    <tr><td>DATASET</td><td>KIBA · 2,111 drugs × 229 kinases · 118,254 pairs</td></tr>
+    <tr><td>SOURCE</td><td>github.com/hkmztrk/DeepDTA/tree/master/data</td></tr>
+    <tr><td>PRIMARY METRIC</td><td>Concordance Index (cold-drug split)</td></tr>
+    <tr><td>SELECTED MODEL</td><td>XGBoost · cold-drug CI 0.783</td></tr>
+    <tr><td>CODE</td><td>github.com/p243000/tinypharmagen</td></tr>
+  </table>
+</section>
+
+<!-- ============================ 1 ============================ -->
+<section class="pb">
+<h2>1 · Problem statement</h2>
+<p>Discovering a drug takes 10–20 years and billions of dollars. A central bottleneck is
+deciding <i>which</i> small molecules bind strongly to <i>which</i> disease-related protein.
+Laboratory measurement is slow and expensive, so computational models are used to rank
+candidate molecules before any assay is run.</p>
+
+<p><b>Task.</b> Given a drug molecule and a kinase protein, predict the binding affinity.
+This is a supervised regression problem: learn a function <code>affinity = f(drug, protein)</code>
+from thousands of lab-measured triples.</p>
+
+<table>
+  <tr><th>Input</th><th>Representation</th><th>Example</th></tr>
+  <tr><td>Drug</td><td>SMILES string</td><td class="mono">CC(=O)Nc1ccc(O)cc1</td></tr>
+  <tr><td>Protein</td><td>Amino-acid sequence</td><td class="mono">MKKFFDSRREQGSK…</td></tr>
+  <tr><td>Output</td><td>One real number</td><td>KIBA score (higher = stronger binding)</td></tr>
+</table>
+
+<p><b>Why kinases.</b> Kinases are enzymes that act as biological on/off switches by
+phosphorylating other proteins. When a kinase is permanently “on” it can drive
+uncontrolled cell growth, which makes kinases primary targets in cancer therapy — and
+makes high-quality benchmark data available.</p>
+
+<div class="note"><b>Scope.</b> The project is inspired by the DeepPharmaGen architecture
+(protein language model + graph networks + SMILES generation) but deliberately builds a
+much smaller, fully reproducible system: engineered features with tree models plus a
+compact CNN, in the style of DeepDTA.</div>
+
+<h2>2 · Dataset</h2>
+<p>We use the <b>KIBA</b> benchmark (Tang et al., 2014) and support <b>DAVIS</b>
+(Davis et al., 2011); both are downloaded from the public DeepDTA repository. The data is a
+matrix of measurements — drugs × kinases — and every non-empty cell is one training example.</p>
+
+<table>
+  <tr><th></th><th>KIBA (used)</th><th>DAVIS (supported)</th></tr>
+  <tr><td>Drugs × kinases</td><td class="num">2,111 × 229</td><td class="num">68 × 442</td></tr>
+  <tr><td>Labelled pairs</td><td class="num">118,254</td><td class="num">30,056</td></tr>
+  <tr><td>Affinity measure</td><td>Composite Ki/Kd/IC<sub>50</sub> score</td><td>K<sub>d</sub> (nM) → pK<sub>d</sub></td></tr>
+  <tr><td>Missing cells</td><td class="num">≈76%</td><td class="num">0%</td></tr>
+</table>
+
+<h3>Features and target</h3>
+<table>
+  <tr><th>Block</th><th class="num">Size</th><th>Description</th></tr>
+  <tr><td>Drug</td><td class="num">1,031</td><td>1024-bit Morgan fingerprint (radius 2, ≈ECFP4) + 7 physicochemical
+      descriptors: molecular weight, LogP, TPSA, H-bond donors, H-bond acceptors, rotatable bonds, rings</td></tr>
+  <tr><td>Protein</td><td class="num">420</td><td>Amino-acid composition (20 fractions) + dipeptide composition (400 adjacent-pair fractions)</td></tr>
+  <tr><td><b>Pair</b></td><td class="num"><b>1,451</b></td><td>Concatenated drug + protein vector</td></tr>
+  <tr><td>Target</td><td class="num">1</td><td>KIBA score (DAVIS: pK<sub>d</sub> = −log<sub>10</sub> K<sub>d</sub>)</td></tr>
+</table>
+
+<h2>3 · Data preprocessing</h2>
+<ul>
+  <li><b>Invalid SMILES:</b> every string is parsed with RDKit; a parse failure removes the drug (none in KIBA).</li>
+  <li><b>Duplicates:</b> SMILES are canonicalised, so the same molecule written differently maps to one string.
+      Duplicate molecules are grouped and kept on the same side of the split. Duplicate protein sequences
+      (e.g. mutant kinases sharing a base sequence) are retained because each has its own measurements.</li>
+  <li><b>Missing values:</b> empty matrix cells are <i>unmeasured</i> pairs, not errors; only measured pairs are kept.
+      KIBA retains 118,254 of 483,419 cells.</li>
+  <li><b>Target conversion:</b> DAVIS K<sub>d</sub> in nM is converted to pK<sub>d</sub> = −log<sub>10</sub>(K<sub>d</sub>/10<sup>9</sup>);
+      KIBA scores are already well scaled and kept as-is.</li>
+  <li><b>Categorical data:</b> all inputs (SMILES characters, amino-acid letters) are inherently categorical
+      and are encoded numerically — fingerprints and compositions for the tree models, integer token IDs for the CNN.</li>
+  <li><b>Scaling:</b> not required. Random Forest and XGBoost split one feature at a time and are invariant to
+      monotone rescaling; fingerprint bits are binary and composition features are already fractions in [0,1].
+      A linear model would need <code>StandardScaler</code> fitted on training data only.</li>
+  <li><b>Splits:</b> 80/20 <b>random</b> split, plus a stricter 80/20 <b>cold-drug</b> split
+      (<code>GroupShuffleSplit</code> on molecule identity) where every pair of a held-out drug goes to the test set.
+      For the CNN, 10% of the training pairs form a validation slice used for epoch selection.</li>
+</ul>
+
+<h2>4 · Exploratory data analysis</h2>
+<p>The target distribution is narrow and bell-shaped around 11.5 with a few low outliers, so the regression
+target is well behaved. Protein lengths vary widely (up to ≈4,100 residues) and SMILES lengths are skewed,
+which motivates fixed-length representations. Molecular weight and LogP show only a weak trend against mean
+potency, i.e. simple global descriptors alone are insufficient.</p>
+
+<figure>
+  <img src="../figures/eda.png" alt="EDA panels">
+  <figcaption><span>Target distribution · lengths · mean potency per drug · MW vs potency · measurement heatmap</span><span>FIG. 01</span></figcaption>
+</figure>
+
+<div class="note"><b>Key finding that drives the evaluation design.</b> Drug identity alone explains
+<b>42.0%</b> of the variance in KIBA scores (protein identity: 14.1%; additive drug + protein: 49.6%).
+A model can therefore look strong on a random split simply by recognising drugs it has already seen.
+This is why the cold-drug split is our primary protocol.</div>
+
+<h2>5 · Models and evaluation</h2>
+<p>Three models were trained, covering both major families.</p>
+<table>
+  <tr><th>Model</th><th>Family</th><th>Input</th><th>Key settings</th></tr>
+  <tr><td>Random Forest</td><td>Bagging</td><td>1,451 features</td><td>100 trees, depth 18, max_features 0.1, leaf 5</td></tr>
+  <tr><td>XGBoost</td><td>Gradient boosting</td><td>1,451 features</td><td>600 trees, η 0.05, depth 8, subsample 0.8, colsample 0.5</td></tr>
+  <tr><td>DeepDTA-lite CNN</td><td>Deep learning</td><td>Raw SMILES + sequence</td><td>Embedding 64, filters 32/64/96, global max-pool, dense 512-256-1</td></tr>
+</table>
+
+<p><b>Metrics.</b> MSE, RMSE, R², Pearson r, Spearman ρ and the Concordance Index (CI).
+CI is primary because the practical task is <i>ranking</i> candidates, not exact potency: CI is the
+probability that, for a random pair of pairs, the model orders the stronger binder first (0.5 = random).</p>
+
+<table>
+  <tr><th>Split</th><th>Model</th><th class="num">MSE ↓</th><th class="num">R² ↑</th><th class="num">Pearson ↑</th><th class="num">Spearman ↑</th><th class="num">CI ↑</th><th class="num">Time</th></tr>
+  <tr><td>Random</td><td>Random Forest</td><td class="num">0.322</td><td class="num">0.540</td><td class="num">0.751</td><td class="num">0.756</td><td class="num">0.805</td><td class="num">168 s</td></tr>
+  <tr><td>Random</td><td>XGBoost</td><td class="num">0.216</td><td class="num">0.691</td><td class="num">0.836</td><td class="num">0.822</td><td class="num">0.840</td><td class="num">29 s</td></tr>
+  <tr><td>Random</td><td>CNN</td><td class="num">0.199</td><td class="num">0.716</td><td class="num">0.849</td><td class="num">0.839</td><td class="num">0.854</td><td class="num">483 s</td></tr>
+  <tr><td>Cold-drug</td><td>Random Forest</td><td class="num">0.382</td><td class="num">0.473</td><td class="num">0.699</td><td class="num">0.716</td><td class="num"><b>0.787</b></td><td class="num">169 s</td></tr>
+  <tr><td>Cold-drug</td><td>XGBoost</td><td class="num"><b>0.360</b></td><td class="num"><b>0.502</b></td><td class="num"><b>0.710</b></td><td class="num">0.708</td><td class="num">0.783</td><td class="num"><b>28 s</b></td></tr>
+  <tr><td>Cold-drug</td><td>CNN</td><td class="num">0.421</td><td class="num">0.419</td><td class="num">0.657</td><td class="num">0.656</td><td class="num">0.760</td><td class="num">476 s</td></tr>
+</table>
+
+<figure>
+  <img src="../figures/ci_comparison.png" alt="CI by model and split">
+  <figcaption><span>Concordance Index by model and split (KIBA)</span><span>FIG. 02</span></figcaption>
+</figure>
+
+<h2>6 · Comparison and selection of the best model</h2>
+<p><b>Rule fixed before seeing results:</b> choose by cold-drug CI; if models are within ≈0.01 CI, treat them as
+tied and break the tie on practicality — training speed, model size, deployability and explainability.</p>
+
+<h3>Findings</h3>
+<ul>
+  <li>On the <b>random split</b> the CNN is best (CI 0.854), XGBoost next (0.840). These numbers are flattered by
+      the drug-identity shortcut quantified in §4.</li>
+  <li>On the <b>cold-drug split</b> all models drop to CI 0.76–0.79. The CNN falls furthest (−0.094), indicating it
+      exploits drug identity more strongly than the tree models. Random Forest and XGBoost are effectively tied
+      (0.787 vs 0.783).</li>
+  <li>XGBoost has the best cold-drug error metrics and trains in 28 s — roughly 6× faster than Random Forest
+      and 16× faster than the CNN — and produces a 10.5 MB model that predicts in milliseconds on a CPU.</li>
+</ul>
+
+<p><b>Selected model: XGBoost.</b> It matches Random Forest on ranking quality (ΔCI = 0.004, within noise),
+leads on MSE, R² and Pearson for unseen drugs, and is by far the most practical to deploy.</p>
+
+<h3>How XGBoost works</h3>
+<p>XGBoost builds an additive model of small regression trees:
+ŷ(x) = Σ<sub>k</sub> η f<sub>k</sub>(x). It starts from a constant, computes the residuals
+r<sub>i</sub> = y<sub>i</sub> − ŷ<sub>i</sub>, fits a shallow tree to those residuals, and adds it with a small
+learning rate η = 0.05. Repeating for 600 rounds is gradient descent in function space: where a neural network
+moves <i>weights</i> downhill, boosting adds <i>trees</i> downhill. A regularised objective penalises tree size
+and leaf magnitudes, and row/column subsampling adds further variance control. Depth-8 trees can represent
+drug × protein interactions, which is exactly what binding depends on. Random Forest instead averages many
+independent deep trees (variance reduction); the CNN learns its own features but needs many more distinct drugs.</p>
+
+<h3>Learning curve</h3>
+<p>With a fixed cold-drug test set, CI rises monotonically with the number of training drugs:
+0.662 at 50 drugs → 0.679 (100) → 0.708 (200) → 0.724 (400) → 0.751 (800) → <b>0.775 (1,600)</b>.
+The absence of a plateau shows the limiting factor is data diversity, not model capacity. It also explains why
+DAVIS (only ≈54 training drugs) sat on the steep part of the curve.</p>
+
+<div class="two">
+  <figure><img src="../figures/learning_curve.png" alt="Learning curve"><figcaption><span>Test CI vs training drugs</span><span>FIG. 03</span></figcaption></figure>
+  <figure><img src="../figures/feature_importance.png" alt="Feature importance"><figcaption><span>Gain importance by group</span><span>FIG. 04</span></figcaption></figure>
+</div>
+
+<h3>What the model uses</h3>
+<p>Gain-based importance: ≈<b>75%</b> drug Morgan fingerprint bits, ≈<b>23%</b> protein dipeptide composition,
+≈1% molecular descriptors and amino-acid composition. The model therefore uses both sides of the pair;
+protein composition supplies the target-specific signal beyond “this drug is generally potent”.
+Importance describes what the model <i>uses</i>, not biological causation.</p>
+
+<figure>
+  <img src="../figures/pred_vs_actual.png" alt="Predicted vs actual">
+  <figcaption><span>Predicted vs actual KIBA score, all models and splits (dashed = perfect)</span><span>FIG. 05</span></figcaption>
+</figure>
+
+<h2>7 · Web application</h2>
+<p>The selected model is deployed behind a local HTTP server (<code>app.py</code>) with a monochrome
+Three.js frontend (<code>index.html</code>). The user flow:</p>
+<ol style="margin:4px 0 10px;padding-left:18px">
+  <li>Choose an example compound (imatinib, gefitinib, erlotinib) or paste any SMILES.</li>
+  <li>Pick one of the 229 KIBA kinases, or paste a custom sequence.</li>
+  <li>Press <b>Run prediction</b>. The server validates the inputs, computes the 1,451-feature pair with the
+      same <code>features.py</code> used in training, scores it with XGBoost, embeds a 3D conformer (ETKDGv3 + MMFF),
+      and returns the score, binder class, canonical SMILES and atom/bond geometry.</li>
+</ol>
+
+<figure>
+  <img src="../figures/app_screenshot.png" alt="Application screenshot">
+  <figcaption><span>Workbench: input panel, interactive 3D conformer, predicted score and binder class</span><span>FIG. 06</span></figcaption>
+</figure>
+
+<p><b>Visualisations.</b> The workbench includes a rotatable ball-and-stick viewer (orbit, zoom, pan, auto-rotate,
+snapshot), a score gauge with the strong/moderate thresholds, and a model-analysis section generated live from the
+results tables: the CI leaderboard, the learning curve, and gain-importance charts. Training figures are displayed
+in grayscale to match this report.</p>
+
+<p><b>Deployment notes.</b> The model is retrained on all pairs before export; all reported metrics come from the
+held-out splits. Predictions for drugs outside the training set are less reliable than random-split numbers
+suggest, and the interface states this explicitly with the cold-drug CI. A helper <code>?demo=1</code> URL parameter
+auto-runs a prediction for demonstrations.</p>
+
+<h2>8 · Conclusion, limitations and future work</h2>
+<p>We compared Random Forest, XGBoost and a DeepDTA-style 1-D CNN for kinase–drug affinity prediction on KIBA.
+Random-split performance (CI 0.81–0.85) is partly an artefact of seeing the same drugs during training. On the
+stricter cold-drug split, performance is CI 0.76–0.79 and the tree models beat the CNN. XGBoost was selected:
+it ties Random Forest on ranking, has the best error metrics on unseen drugs, and is the most practical to train
+and serve. A learning curve shows accuracy on new molecules keeps improving with more training drugs, so data
+diversity — not the model — is the main constraint.</p>
+
+<h3>Limitations</h3>
+<ul>
+  <li>Cold-drug CI ≈0.78 supports ranking and prioritisation, not exact potency prediction.</li>
+  <li>RF and XGBoost are a near-tie (ΔCI 0.004); a single seed and split are reported, without confidence intervals.</li>
+  <li>Kinases only: the model should not be trusted for other protein families.</li>
+  <li>Composition features discard long-range sequence order and 3-D structure; the CNN truncates SMILES at 100
+      characters and proteins at 1,000 residues.</li>
+  <li>KIBA is a composite score, not a physical quantity, so no K<sub>d</sub> conversion is shown for KIBA.</li>
+  <li>Hyperparameters follow standard practice; no grid search was run.</li>
+  <li>The deployed model is trained on all data, so predictions for KIBA drugs are in-sample.</li>
+  <li>Predictions are computational estimates, not a substitute for experimental assays.</li>
+</ul>
+
+<h3>Future work</h3>
+<ul>
+  <li>Add more drugs and target families (BindingDB, ChEMBL): data diversity is the main limit.</li>
+  <li>Replace composition features with protein language-model embeddings (ESM-2) and fingerprints with a graph
+      neural network on the molecular graph.</li>
+  <li>Hyperparameter search (Optuna), multiple seeds, confidence intervals, and an XGBoost + CNN ensemble.</li>
+  <li>Uncertainty estimates in the interface, and extension to target-conditioned molecule generation.</li>
+</ul>
+
+<h2>References</h2>
+<div class="ref">Davis et al. Comprehensive analysis of kinase inhibitor selectivity. <i>Nat. Biotechnol.</i> 2011.</div>
+<div class="ref">Tang et al. Making sense of large-scale kinase inhibitor bioactivity data sets (KIBA). <i>J. Chem. Inf. Model.</i> 2014.</div>
+<div class="ref">Öztürk, Özgür &amp; Ozkirimli. DeepDTA: deep drug–target binding affinity prediction. <i>Bioinformatics</i> 2018.</div>
+<div class="ref">Breiman. Random Forests. <i>Machine Learning</i> 2001.</div>
+<div class="ref">Chen &amp; Guestrin. XGBoost: A scalable tree boosting system. <i>KDD</i> 2016.</div>
+<div class="ref">Rogers &amp; Hahn. Extended-connectivity fingerprints. <i>J. Chem. Inf. Model.</i> 2010.</div>
+<div class="ref">RDKit: open-source cheminformatics toolkit.</div>
+<div class="ref">P. R. Shah. DeepPharmaGen, final-year project report, AWKUM, 2026 (inspiration).</div>
+
+<h2>Submission</h2>
+<table>
+  <tr><th>Item</th><th>Location</th></tr>
+  <tr><td>Source code</td><td>github.com/p243000/tinypharmagen</td></tr>
+  <tr><td>Notebook</td><td>notebook/p243000_p243012_p243032_bse5a_ai_project.ipynb</td></tr>
+  <tr><td>Dataset</td><td>github.com/hkmztrk/DeepDTA/tree/master/data</td></tr>
+  <tr><td>Web application</td><td>python app.py → http://127.0.0.1:8000</td></tr>
+  <tr><td>Demo</td><td>?demo=1 auto-run · screen recording attached</td></tr>
+</table>
+</section>
+
+</body>
+</html>
