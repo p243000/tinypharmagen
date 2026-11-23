@@ -7,6 +7,7 @@ target. Built for the **Artificial Intelligence** course project (BSE-5A).
 - **Output:** KIBA binding score (higher = stronger binding), binder class, interactive 3D conformer
 - **Model:** XGBoost regressor on 1,451 engineered features
 - **Frontend:** monochrome, Three.js-powered molecular workbench
+- **Repository:** <https://github.com/p243000/tinypharmagen>
 
 ## Demo
 
