@@ -24,3 +24,6 @@ Thumbs.db
 # Local screenshots / scratch
 temp/
 *.log
+
+# Cached AlphaFold structures
+structures/

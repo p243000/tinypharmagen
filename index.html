@@ -109,7 +109,12 @@ html.noanim *,html.noanim *:before,html.noanim *:after{animation:none!important;
 @keyframes spin{to{transform:rotate(360deg)}}
 .stage-empty strong{display:block;font-size:12px;margin-bottom:7px}
 .stage-empty p{max-width:300px;margin:0;font:9.5px/1.8 var(--mono);color:var(--dim)}
-.stage-tools{display:flex;gap:6px;justify-content:flex-end;padding:0 14px 12px}
+.stage-tools{display:flex;gap:6px;justify-content:space-between;align-items:center;padding:0 14px 12px;flex-wrap:wrap}
+.stage-tools .tools-right{display:flex;gap:6px}
+.viewmode{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:3px;gap:3px}
+.viewmode .mode{border:0;background:transparent;border-radius:5px;padding:6px 11px;font:9px var(--mono);letter-spacing:.08em;color:var(--muted);transition:.16s}
+.viewmode .mode.active{background:#fff;color:var(--ink);box-shadow:0 1px 2px #00000014;font-weight:500}
+.viewmode .mode:disabled{opacity:.35;cursor:not-allowed}
 .toolbtn{background:#fff;border:1px solid var(--line2);border-radius:6px;padding:7px 10px;font:9px var(--mono);letter-spacing:.08em;color:var(--muted);transition:.16s}
 .toolbtn:hover{border-color:var(--ink);color:var(--ink)}
 .legend{display:flex;gap:14px;flex-wrap:wrap;padding:0 16px 14px;font:9px var(--mono);color:var(--muted)}
@@ -295,9 +300,16 @@ html.noanim *,html.noanim *:before,html.noanim *:after{animation:none!important;
       </div>
 
       <div class="stage-tools">
-        <button class="toolbtn" id="resetView">RESET VIEW</button>
-        <button class="toolbtn" id="autoRotate">AUTO ROTATE: OFF</button>
-        <button class="toolbtn" id="snapshot">SNAPSHOT</button>
+        <div class="viewmode" id="viewMode">
+          <button class="mode active" data-mode="ligand">LIGAND</button>
+          <button class="mode" data-mode="protein">PROTEIN</button>
+          <button class="mode" data-mode="both">BOTH</button>
+        </div>
+        <div class="tools-right">
+          <button class="toolbtn" id="resetView">RESET VIEW</button>
+          <button class="toolbtn" id="autoRotate">AUTO ROTATE: OFF</button>
+          <button class="toolbtn" id="snapshot">SNAPSHOT</button>
+        </div>
       </div>
 
       <div class="legend" id="legend">
@@ -432,6 +444,8 @@ const DOMAIN = {min: 5, max: 17};
 const EMPTY_MARK = '<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="3.1"/><circle cx="12" cy="3.6" r="1.9"/><circle cx="4.3" cy="16.1" r="1.9"/><circle cx="19.7" cy="16.1" r="1.9"/><path d="M12 5.5v3.4M9.5 13.8 6.1 15.2M14.5 13.8l3.4 1.4"/></svg>';
 
 let kinases = [], mode = 'pick', viewer = null, autoRotate = false;
+let currentView = 'ligand', lastGeometry = null;
+let currentStructure = null, structureCache = {};
 let meta = {strong: 12.1, moderate: 11.5};
 
 /* ---------------- input handling ---------------- */
@@ -447,6 +461,8 @@ function setMode(next) {
   $('pasteTab').classList.toggle('active', next === 'paste');
   $('pickPanel').style.display = next === 'pick' ? '' : 'none';
   $('pastePanel').style.display = next === 'paste' ? '' : 'none';
+  if (next === 'paste' && currentView !== 'ligand') setViewMode('ligand');
+  updateModeButtons();
 }
 $('pickTab').onclick = () => setMode('pick');
 $('pasteTab').onclick = () => setMode('paste');
@@ -455,6 +471,9 @@ $('kinase').addEventListener('change', () => {
   $('kinaseInfo').textContent = k
     ? `${k.sequence.length.toLocaleString()} residues · sequence from the KIBA dataset`
     : 'Kinases represented in the KIBA benchmark.';
+  currentStructure = null;
+  updateModeButtons();
+  if (currentView !== 'ligand' && lastGeometry) renderCurrentView();
 });
 
 const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -478,6 +497,7 @@ async function loadMeta() {
     $('strongOut').textContent = Number(meta.strong).toFixed(2);
     $('moderateOut').textContent = Number(meta.moderate).toFixed(2);
     $('kinase').dispatchEvent(new Event('change'));
+    updateModeButtons();
 
     renderCiChart(model.results || []);
     renderLearningCurve(model.learning_curve || []);
@@ -686,7 +706,138 @@ function disposeViewer() {
   viewer = null;
 }
 
-function renderMolecule(geometry) {
+function plddtGray(p) {
+  const t = Math.max(0, Math.min(1, (100 - p) / 100));
+  const v = Math.round(0x26 + t * (0xc8 - 0x26));
+  return (v << 16) | (v << 8) | v;
+}
+
+function groupRadius(group) {
+  const sphere = new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere());
+  return Math.max(sphere.radius, 1e-6);
+}
+
+function buildLigandGroup(geometry) {
+  const group = new THREE.Group();
+  const atoms = geometry.atoms, bonds = geometry.bonds;
+  const vectors = atoms.map(a => new THREE.Vector3(a.x, a.y, a.z));
+  const center = new THREE.Box3().setFromPoints(vectors).getCenter(new THREE.Vector3());
+  vectors.forEach(v => v.sub(center));
+
+  const sphereGeo = new THREE.SphereGeometry(1, 24, 18);
+  const outlineGeo = new THREE.SphereGeometry(1.055, 18, 14);
+  const mats = {};
+  const outlineMat = new THREE.MeshBasicMaterial({color: 0x0b0b0b, side: THREE.BackSide});
+
+  atoms.forEach((a, i) => {
+    const spec = ELEMENT[a.element] || ELEMENT.C;
+    if (!mats[a.element]) {
+      mats[a.element] = new THREE.MeshStandardMaterial({color: spec.color, roughness: 0.38, metalness: 0.0});
+    }
+    const atom = new THREE.Mesh(sphereGeo, mats[a.element]);
+    atom.position.copy(vectors[i]);
+    atom.scale.setScalar(spec.r);
+    group.add(atom);
+    const outline = new THREE.Mesh(outlineGeo, outlineMat);
+    outline.position.copy(vectors[i]);
+    outline.scale.setScalar(spec.r);
+    group.add(outline);
+  });
+
+  const bondMat = new THREE.MeshStandardMaterial({color: 0x222222, roughness: 0.5, metalness: 0.0});
+  const halfMat = new THREE.MeshStandardMaterial({color: 0x5e5e5e, roughness: 0.55});
+  bonds.forEach(b => {
+    const direction = new THREE.Vector3().subVectors(vectors[b.b], vectors[b.a]).normalize();
+    const side = new THREE.Vector3().crossVectors(direction, new THREE.Vector3(0, 0, 1));
+    if (side.length() < 0.01) side.set(1, 0, 0);
+    side.normalize().multiplyScalar(0.085);
+    makeCylinder(vectors[b.a], vectors[b.b], 0.072, bondMat, group);
+    if (b.order >= 2 || b.aromatic) {
+      makeCylinder(vectors[b.a], vectors[b.b], 0.032, halfMat, group, side);
+      if (b.order >= 3) makeCylinder(vectors[b.a], vectors[b.b], 0.032, halfMat, group, side.clone().multiplyScalar(-1));
+    }
+  });
+  return group;
+}
+
+function buildProteinGroup(trace) {
+  const group = new THREE.Group();
+  const pts = trace.atoms.map(a => new THREE.Vector3(a.x, a.y, a.z));
+  const center = new THREE.Box3().setFromPoints(pts).getCenter(new THREE.Vector3());
+  pts.forEach(v => v.sub(center));
+
+  const bounds = new THREE.Box3().setFromPoints(pts).getBoundingSphere(new THREE.Sphere());
+  const tubeR = Math.max(0.6, bounds.radius * 0.05);
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.5);
+  const tubularSegments = Math.min(900, Math.max(240, pts.length * 2));
+  const tubeGeo = new THREE.TubeGeometry(curve, tubularSegments, tubeR, 10, false);
+
+  const n = pts.length;
+  const plddts = trace.atoms.map(a => a.plddt);
+  const uv = tubeGeo.attributes.uv;
+  const posCount = tubeGeo.attributes.position.count;
+  const colors = new Float32Array(posCount * 3);
+  for (let i = 0; i < posCount; i++) {
+    const t = Math.max(0, Math.min(1, uv.getY(i)));
+    const f = t * (n - 1);
+    const i0 = Math.floor(f), i1 = Math.min(n - 1, i0 + 1);
+    const frac = f - i0;
+    const p = plddts[i0] * (1 - frac) + plddts[i1] * frac;
+    const c = plddtGray(p);
+    colors[i * 3] = ((c >> 16) & 255) / 255;
+    colors[i * 3 + 1] = ((c >> 8) & 255) / 255;
+    colors[i * 3 + 2] = (c & 255) / 255;
+  }
+  tubeGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  group.add(new THREE.Mesh(tubeGeo, new THREE.MeshStandardMaterial({vertexColors: true, roughness: 0.5, metalness: 0.0})));
+
+  const beadGeo = new THREE.SphereGeometry(tubeR * 1.6, 16, 12);
+  const nBead = new THREE.Mesh(beadGeo, new THREE.MeshStandardMaterial({color: 0x101010, roughness: 0.35}));
+  nBead.position.copy(pts[0]); group.add(nBead);
+  const cBead = new THREE.Mesh(beadGeo, new THREE.MeshStandardMaterial({color: 0xb5b5b5, roughness: 0.35}));
+  cBead.position.copy(pts[pts.length - 1]); group.add(cBead);
+  return group;
+}
+
+function bothGroup() {
+  const root = new THREE.Group();
+  const lg = lastGeometry ? buildLigandGroup(lastGeometry) : null;
+  const pg = currentStructure ? buildProteinGroup(currentStructure) : null;
+  if (lg && pg) {
+    const lr = groupRadius(lg);
+    const pr = groupRadius(pg);
+    pg.scale.setScalar(lr / pr);
+    lg.position.x = -lr * 1.6;
+    pg.position.x = lr * 1.6;
+    root.add(lg); root.add(pg);
+  } else if (lg) {
+    root.add(lg);
+  } else if (pg) {
+    root.add(pg);
+  }
+  return root;
+}
+
+async function getStructure(accession) {
+  if (structureCache[accession]) return structureCache[accession];
+  const res = await fetch('/api/structure?gene=' + encodeURIComponent(accession));
+  if (!res.ok) return null;
+  const data = await res.json();
+  structureCache[accession] = data;
+  return data;
+}
+
+function currentAccession() {
+  if (mode !== 'pick') return null;
+  const v = $('kinase').value;
+  return kinases.some(k => k.gene === v) ? v : null;
+}
+
+const LEGEND_LIGAND = '<span><i class="dot" style="background:#1a1a1a"></i>C</span><span><i class="dot" style="background:#4d4d4d"></i>N</span><span><i class="dot" style="background:#737373"></i>O</span><span><i class="dot" style="background:#999999"></i>S</span><span><i class="dot" style="background:#b3b3b3"></i>P</span><span><i class="dot" style="background:#cccccc"></i>Halogens</span>';
+const LEGEND_PROTEIN = '<span><i class="dot" style="background:#0b0b0b"></i>Confident · pLDDT ≥ 90</span><span><i class="dot" style="background:#6e6e6e"></i>Mid · pLDDT 50–90</span><span><i class="dot" style="background:#c8c8c8"></i>Low · pLDDT &lt; 50</span><span><i class="dot" style="background:#101010;border-radius:50%"></i>N-term</span><span><i class="dot" style="background:#b5b5b5;border-radius:50%"></i>C-term</span>';
+const LEGEND_BOTH = LEGEND_LIGAND + '<span style="color:#d0d0d0">|</span><span><i class="dot" style="background:#0b0b0b"></i>Confident</span><span><i class="dot" style="background:#c8c8c8"></i>Less confident</span>';
+
+function renderScene(build) {
   disposeViewer();
   const canvas = $('molCanvas');
   const wrap = canvas.parentElement;
@@ -697,70 +848,30 @@ function renderMolecule(geometry) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(34, wrap.clientWidth / wrap.clientHeight, 0.1, 500);
+  const camera = new THREE.PerspectiveCamera(34, wrap.clientWidth / wrap.clientHeight, 0.1, 4000);
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x9a9a9a, 1.35));
   const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(6, 9, 11); scene.add(key);
   const fill = new THREE.DirectionalLight(0xffffff, 0.55); fill.position.set(-8, -4, -6); scene.add(fill);
   const rim = new THREE.DirectionalLight(0xffffff, 0.45); rim.position.set(0, -24, 6); scene.add(rim);
 
-  const molecule = new THREE.Group();
-  scene.add(molecule);
+  const root = build();
+  scene.add(root);
 
-  const atoms = geometry.atoms, bonds = geometry.bonds;
-  const vectors = atoms.map(a => new THREE.Vector3(a.x, a.y, a.z));
-  const sphereGeo = new THREE.SphereGeometry(1, 24, 18);
-  const outlineGeo = new THREE.SphereGeometry(1.055, 18, 14);
-  const mats = {};
-  const outlineMat = new THREE.MeshBasicMaterial({color: 0x0b0b0b, side: THREE.BackSide});
-
-  atoms.forEach((a, i) => {
-    const spec = ELEMENT[a.element] || ELEMENT.C;
-    if (!mats[a.element]) {
-      mats[a.element] = new THREE.MeshStandardMaterial({
-        color: spec.color, roughness: 0.38, metalness: 0.0,
-      });
-    }
-    const atom = new THREE.Mesh(sphereGeo, mats[a.element]);
-    atom.position.copy(vectors[i]);
-    atom.scale.setScalar(spec.r);
-    molecule.add(atom);
-
-    const outline = new THREE.Mesh(outlineGeo, outlineMat);
-    outline.position.copy(vectors[i]);
-    outline.scale.setScalar(spec.r);
-    molecule.add(outline);
-  });
-
-  const bondMat = new THREE.MeshStandardMaterial({color: 0x222222, roughness: 0.5, metalness: 0.0});
-  const halfMat = new THREE.MeshStandardMaterial({color: 0x5e5e5e, roughness: 0.55});
-  bonds.forEach(b => {
-    const a = atoms[b.a], c = atoms[b.b];
-    const start = vectors[b.a], end = vectors[b.b];
-    const direction = new THREE.Vector3().subVectors(end, start).normalize();
-    const side = new THREE.Vector3().crossVectors(direction, new THREE.Vector3(0, 0, 1));
-    if (side.length() < 0.01) side.set(1, 0, 0);
-    side.normalize().multiplyScalar(0.085);
-    makeCylinder(a, c, 0.072, bondMat, molecule);
-    if (b.order >= 2 || b.aromatic) {
-      makeCylinder(a, c, 0.032, halfMat, molecule, side);
-      if (b.order >= 3) makeCylinder(a, c, 0.032, halfMat, molecule, side.clone().multiplyScalar(-1));
-    }
-  });
-
-  // fit camera to molecule bounds
-  const sphere = new THREE.Box3().setFromPoints(vectors).getBoundingSphere(new THREE.Sphere());
-  const dist = (sphere.radius * 0.96 + 0.5) / Math.tan((camera.fov * Math.PI / 180) / 2);
+  const radius = Math.max(groupRadius(root), 2);
+  const dist = (radius * 0.98 + 0.4) / Math.tan((camera.fov * Math.PI / 180) / 2);
   camera.position.set(0.3 * dist, 0.24 * dist, 0.93 * dist);
-  camera.near = Math.max(0.1, dist / 100); camera.far = dist * 10; camera.updateProjectionMatrix();
+  camera.near = Math.max(0.1, dist / 100);
+  camera.far = dist * 20;
+  camera.updateProjectionMatrix();
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.07;
   controls.rotateSpeed = 0.85;
   controls.zoomSpeed = 0.9;
-  controls.minDistance = sphere.radius * 1.1;
-  controls.maxDistance = dist * 3;
+  controls.minDistance = radius * 0.4;
+  controls.maxDistance = dist * 4;
   controls.autoRotate = autoRotate;
   controls.autoRotateSpeed = 1.1;
   controls.target.set(0, 0, 0);
@@ -784,16 +895,66 @@ function renderMolecule(geometry) {
   tick();
 
   viewer = {renderer, scene, camera, controls, frame, observer, home: camera.position.clone()};
-
-  $('atomCount').textContent = `${atoms.length} ATOMS · ${bonds.length} BONDS`;
-  $('resetView').onclick = () => {
-    if (!viewer) return;
-    camera.position.copy(viewer.home);
-    controls.target.set(0, 0, 0);
-    controls.update();
-  };
   $('autoRotate').textContent = `AUTO ROTATE: ${autoRotate ? 'ON' : 'OFF'}`;
 }
+
+async function renderCurrentView() {
+  if (currentView !== 'ligand' && !currentAccession()) {
+    showError('Protein view requires a kinase selected from the dataset.');
+    setViewMode('ligand');
+    return;
+  }
+  if (currentView === 'ligand' && !lastGeometry) {
+    $('stageEmpty').classList.remove('hidden');
+    $('stageEmpty').style.display = '';
+    return;
+  }
+  if (currentView !== 'ligand' && !currentStructure) {
+    $('stageEmpty').classList.remove('hidden');
+    $('stageEmpty').style.display = '';
+    $('stageEmpty').innerHTML = '<div><div class="empty-orb">' + EMPTY_MARK + '</div><strong>Loading structure…</strong><p>Fetching the AlphaFold model for ' + escapeHtml(currentAccession()) + '.</p></div>';
+    currentStructure = await getStructure(currentAccession());
+    if (!currentStructure) {
+      $('stageEmpty').innerHTML = '<div><div class="empty-orb">' + EMPTY_MARK + '</div><strong>Structure unavailable</strong><p>No AlphaFold prediction found for ' + escapeHtml(currentAccession()) + '.</p></div>';
+      return;
+    }
+  }
+
+  $('stageEmpty').classList.add('hidden');
+  $('stageEmpty').style.display = 'none';
+
+  if (currentView === 'ligand') {
+    $('stageLabel').textContent = '3D CONFORMER / BALL & STICK';
+    $('atomCount').textContent = `${lastGeometry.atoms.length} ATOMS · ${lastGeometry.bonds.length} BONDS`;
+    $('legend').innerHTML = LEGEND_LIGAND;
+    renderScene(() => buildLigandGroup(lastGeometry));
+  } else if (currentView === 'protein') {
+    $('stageLabel').textContent = 'PROTEIN BACKBONE / Cα TRACE';
+    $('atomCount').textContent = `${currentStructure.residues} RESIDUES · ${currentStructure.source.toUpperCase()}`;
+    $('legend').innerHTML = LEGEND_PROTEIN;
+    renderScene(() => buildProteinGroup(currentStructure));
+  } else {
+    $('stageLabel').textContent = 'CO-DISPLAY / LIGAND + PROTEIN';
+    $('atomCount').textContent = 'NOT A DOCKED POSE · SCALES NORMALISED';
+    $('legend').innerHTML = LEGEND_BOTH;
+    renderScene(() => bothGroup());
+  }
+}
+
+function updateModeButtons() {
+  const hasKinase = currentAccession() != null;
+  document.querySelectorAll('#viewMode .mode[data-mode="protein"], #viewMode .mode[data-mode="both"]')
+    .forEach(b => { b.disabled = !hasKinase; });
+}
+
+function setViewMode(v) {
+  currentView = v;
+  document.querySelectorAll('#viewMode .mode').forEach(b => b.classList.toggle('active', b.dataset.mode === v));
+  updateModeButtons();
+  renderCurrentView();
+}
+
+document.querySelectorAll('#viewMode .mode').forEach(b => b.addEventListener('click', () => setViewMode(b.dataset.mode)));
 
 /* viewer controls registered once ---------------- */
 $('autoRotate').onclick = () => {
@@ -836,7 +997,7 @@ function updateGauge(score) {
   $('threshStrong').dataset.l = Number(meta.strong).toFixed(1);
 }
 
-$('predict').onclick = async () => {
+async function runPrediction() {
   $('error').style.display = 'none';
   const smiles = $('smiles').value.trim();
   const sequence = mode === 'pick'
@@ -877,13 +1038,19 @@ $('predict').onclick = async () => {
     $('resultBody').classList.add('show');
 
     if (data.geometry && data.geometry.atoms.length) {
-      $('stageEmpty').classList.add('hidden');
-      $('stageEmpty').style.display = 'none';
-      renderMolecule(data.geometry);
+      lastGeometry = data.geometry;
+      currentStructure = null;
+      setViewMode('ligand');
     } else {
+      lastGeometry = null;
+      currentStructure = null;
+      disposeViewer();
       $('stageEmpty').classList.remove('hidden');
       $('stageEmpty').style.display = '';
       $('stageEmpty').innerHTML = '<div><div class="empty-orb">'+EMPTY_MARK+'</div><strong>3D conformer unavailable</strong><p>The molecule embedded but could not be converted to a 3D structure.</p></div>';
+      $('atomCount').textContent = '— ATOMS';
+      $('stageLabel').textContent = '3D CONFORMER / BALL & STICK';
+      document.querySelectorAll('#viewMode .mode').forEach(b => b.classList.toggle('active', b.dataset.mode === 'ligand'));
     }
   } catch (err) {
     showError(err.message);
@@ -891,12 +1058,13 @@ $('predict').onclick = async () => {
     btn.disabled = false;
     btn.textContent = original;
   }
-};
+}
+$('predict').onclick = runPrediction;
 
 addEventListener('beforeunload', disposeViewer);
 const params = new URLSearchParams(location.search);
 if (params.has('static')) document.documentElement.classList.add('noanim');
-loadMeta().then(() => {
+loadMeta().then(async () => {
   if (!params.has('demo')) return;
   const gene = params.get('kinase');
   if (gene && kinases.some(k => k.gene === gene)) {
@@ -904,7 +1072,9 @@ loadMeta().then(() => {
     $('kinase').dispatchEvent(new Event('change'));
   }
   $('smiles').value = params.get('smiles') || EXAMPLES.imatinib;
-  setTimeout(() => $('predict').click(), 250);
+  await runPrediction();
+  const view = params.get('view');
+  if (view && ['ligand', 'protein', 'both'].includes(view)) setViewMode(view);
 });
 </script>
 </body>

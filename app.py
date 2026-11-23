@@ -9,10 +9,11 @@ import io
 import json
 import os
 import re
+import urllib.request
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import numpy as np
 import pandas as pd
@@ -25,6 +26,7 @@ from features import pair_features
 HERE = Path(__file__).resolve().parent
 FIGDIR = HERE / "figures"
 OUTDIR = HERE / "outputs"
+STRUCT_DIR = HERE / "structures"
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8000"))
 AA = set("ACDEFGHIKLMNPQRSTVWY")
@@ -136,6 +138,69 @@ MODEL_SUMMARY = _build_model_summary()
 
 
 # --------------------------------------------------------------------------- #
+#  Protein 3D structure (AlphaFold C-alpha trace)
+# --------------------------------------------------------------------------- #
+AF_BASE = "https://alphafold.ebi.ac.uk/files"
+AF_UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) TinyPharmaGen/1.0"}
+
+
+def _alphafold_pdb(accession):
+    """Download (and cache) an AlphaFold model PDB for a UniProt accession."""
+    STRUCT_DIR.mkdir(exist_ok=True)
+    target = STRUCT_DIR / f"{accession}.pdb"
+    if target.exists() and target.stat().st_size > 1000:
+        return target
+    url = f"{AF_BASE}/AF-{accession}-F1-model_v6.pdb"
+    try:
+        req = urllib.request.Request(url, headers=AF_UA)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+        if data.startswith(b"HEADER") or data.startswith(b"ATOM"):
+            target.write_bytes(data)
+            return target
+    except Exception as exc:
+        print(f"structure fetch failed for {accession}: {repr(exc)}")
+    return None
+
+
+def _backbone_trace(accession):
+    """Return the C-alpha backbone trace + per-residue pLDDT confidence."""
+    cache = STRUCT_DIR / f"{accession}.json"
+    if cache.exists():
+        return json.loads(cache.read_text())
+
+    pdb = _alphafold_pdb(accession)
+    if pdb is None:
+        return None
+    try:
+        mol = Chem.MolFromPDBFile(str(pdb), removeHs=True, sanitize=False)
+        if mol is None or not mol.GetConformer().Is3D():
+            return None
+        conf = mol.GetConformer()
+        atoms = []
+        for atom in mol.GetAtoms():
+            info = atom.GetPDBResidueInfo()
+            if info is None or info.GetName().strip() != "CA":
+                continue
+            pos = conf.GetAtomPosition(atom.GetIdx())
+            atoms.append({
+                "i": int(info.GetResidueNumber()),
+                "res": info.GetResidueName().strip(),
+                "x": round(pos.x, 3), "y": round(pos.y, 3), "z": round(pos.z, 3),
+                "plddt": round(float(info.GetTempFactor()), 1),
+            })
+        if not atoms:
+            return None
+        payload = {"accession": accession, "residues": len(atoms),
+                   "source": "AlphaFold v6", "atoms": atoms}
+        cache.write_text(json.dumps(payload))
+        return payload
+    except Exception as exc:
+        print(f"structure parse failed for {accession}: {repr(exc)}")
+        return None
+
+
+# --------------------------------------------------------------------------- #
 #  3D conformer extraction (ball-and-stick payload for Three.js)
 # --------------------------------------------------------------------------- #
 def molecule_3d(smiles):
@@ -227,6 +292,19 @@ class Handler(BaseHTTPRequestHandler):
             rows = [{"gene": str(r.gene), "sequence": str(r.sequence)}
                     for r in KINASES.itertuples(index=False)]
             return self._json(200, rows)
+
+        if path == "/api/structure":
+            qs = parse_qs(urlparse(self.path).query)
+            accession = (qs.get("gene") or [""])[0].strip().upper()
+            if not accession:
+                return self._json(400, {"error": "Missing 'gene' query parameter."})
+            valid = {str(g) for g in KINASES.gene.tolist()}
+            if accession not in valid:
+                return self._json(404, {"error": "Unknown kinase accession."})
+            trace = _backbone_trace(accession)
+            if trace is None:
+                return self._json(404, {"error": "No AlphaFold structure available for this kinase."})
+            return self._json(200, trace)
 
         if path == "/api/health":
             return self._json(200, {"status": "ok", "dataset": META["dataset"]})
