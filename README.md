@@ -60,17 +60,17 @@ train and smallest to deploy.
 ## Repository layout
 
 ```
-app.py               # HTTP server + inference API + 3D conformer generation
+app.py               # HTTP server + inference API + 3D conformer/backbone
 features.py          # Shared featurisation (training AND serving)
 index.html           # Monochrome Three.js workbench with model visualisations
 model.json           # Trained XGBoost model (10.5 MB)
 kinases.csv          # 229 KIBA kinases (gene, sequence)
 meta.json            # Dataset, thresholds, reported metrics
-figures/             # Training figures + app screenshot
-outputs/             # Results tables, learning curve, feature importance
+figures/             # EDA + model-comparison figures
+outputs/             # Results table + learning curve (rendered live in the app)
 notebook/            # Full training / EDA / comparison notebook
-report/              # Report prompt and generated report PDF
-docs/                # Assignment brief
+report/              # Project report (PDF)
+demo/                # Demo video
 ```
 
 ## Dataset
@@ -83,13 +83,16 @@ KIBA and DAVIS benchmarks, downloaded from the public DeepDTA repository:
 
 ## Reproducing the training
 
+Open the notebook in Colab (Runtime → T4 GPU). Its first cell installs RDKit and
+lifelines; PyTorch, XGBoost, scikit-learn, pandas and seaborn are already present.
+
 ```bash
-pip install -r requirements-dev.txt
 jupyter lab notebook/p243000_p243012_p243032_bse5a_ai_project.ipynb
 ```
 
-Set `DATASET = "KIBA"` and `QUICK_RUN = False`, then run all cells. The notebook writes
-`figures/` and `outputs/` directly.
+Set `DATASET = "KIBA"` and `QUICK_RUN = False`, then run all cells. The notebook
+writes `figures/` and `outputs/`, and exports `model.json`, `kinases.csv` and
+`meta.json` to the repository root.
 
 ## Team
 
