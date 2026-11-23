@@ -6,7 +6,7 @@ target. Built for the **Artificial Intelligence** course project (BSE-5A).
 - **Input:** drug SMILES + kinase amino-acid sequence
 - **Output:** KIBA binding score (higher = stronger binding), binder class, interactive 3D conformer
 - **Model:** XGBoost regressor on 1,451 engineered features
-- **Frontend:** monochrome, Three.js-powered molecular workbench
+- **Frontend:** monochrome, Three.js-powered molecular workbench (ligand + protein 3D views)
 - **Repository:** <https://github.com/p243000/tinypharmagen>
 
 ## Demo
@@ -29,6 +29,7 @@ Options:
 | `/api/meta` | Dataset + threshold metadata |
 | `/api/model` | Leaderboard, learning curve, feature importances |
 | `/api/predict` | `POST {smiles, sequence}` → score + 3D geometry |
+| `/api/structure?gene=ACC` | AlphaFold Cα backbone trace + pLDDT (cached) |
 
 ## Results (KIBA, held-out test sets)
 

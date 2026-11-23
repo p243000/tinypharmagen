@@ -249,7 +249,8 @@ Three.js frontend (<code>index.html</code>). The user flow:</p>
   <li>Pick one of the 229 KIBA kinases, or paste a custom sequence.</li>
   <li>Press <b>Run prediction</b>. The server validates the inputs, computes the 1,451-feature pair with the
       same <code>features.py</code> used in training, scores it with XGBoost, embeds a 3D conformer (ETKDGv3 + MMFF),
-      and returns the score, binder class, canonical SMILES and atom/bond geometry.</li>
+      and returns the score, binder class, canonical SMILES and atom/bond geometry. A view toggle then switches between
+      the ligand, the target kinase's 3D backbone, and a side-by-side co-display.</li>
 </ol>
 
 <figure>
@@ -258,9 +259,11 @@ Three.js frontend (<code>index.html</code>). The user flow:</p>
 </figure>
 
 <p><b>Visualisations.</b> The workbench includes a rotatable ball-and-stick viewer (orbit, zoom, pan, auto-rotate,
-snapshot), a score gauge with the strong/moderate thresholds, and a model-analysis section generated live from the
-results tables: the CI leaderboard, the learning curve, and gain-importance charts. Training figures are displayed
-in grayscale to match this report.</p>
+snapshot) and a <b>LIGAND / PROTEIN / BOTH</b> toggle. The protein view renders the target kinase's AlphaFold
+Cα backbone as a smooth tube coloured by per-residue prediction confidence (pLDDT), fetched and cached on demand via
+<code>/api/structure</code>. A score gauge marks the strong/moderate thresholds, and a model-analysis section is
+generated live from the results tables: the CI leaderboard, the learning curve, and gain-importance charts.
+Training figures are displayed in grayscale to match this report.</p>
 
 <p><b>Deployment notes.</b> The model is retrained on all pairs before export; all reported metrics come from the
 held-out splits. Predictions for drugs outside the training set are less reliable than random-split numbers
