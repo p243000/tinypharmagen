@@ -31,6 +31,8 @@ Options:
 | `/api/predict` | `POST {smiles, sequence}` → score + 3D geometry |
 | `/api/structure?gene=ACC` | AlphaFold Cα backbone trace + pLDDT (cached) |
 
+**Demo video:** `demo/io.mp4` — https://github.com/p243000/tinypharmagen/blob/main/demo/io.mp4
+
 ## Results (KIBA, held-out test sets)
 
 | Split | Model | MSE ↓ | R² ↑ | Pearson ↑ | Spearman ↑ | CI ↑ |
