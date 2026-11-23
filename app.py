@@ -25,7 +25,7 @@ from features import pair_features
 HERE = Path(__file__).resolve().parent
 FIGDIR = HERE / "figures"
 OUTDIR = HERE / "outputs"
-HOST = "127.0.0.1"
+HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8000"))
 AA = set("ACDEFGHIKLMNPQRSTVWY")
 AA_ORDER = "ACDEFGHIKLMNPQRSTVWY"
